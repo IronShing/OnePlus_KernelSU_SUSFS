@@ -1958,8 +1958,8 @@ runs:
         if ! grep -q '6\.12\*) ksu_supported=true' anykernel.sh; then
           sed -i '/6\.6\*) ksu_supported=true ;;/a\    6.12*) ksu_supported=true ;;' anykernel.sh
         fi
-        if ! grep -q 'chmod -R 755 "\${AKHOME}/tools"' anykernel.sh; then
-          sed -i '/^\\. tools\/ak3-core\.sh/a\\nsync\nsleep 0.5\nchmod -R 755 "${AKHOME}/tools"' anykernel.sh
+        if ! grep -q 'chmod -R 755.*AKHOME.*/tools' anykernel.sh; then
+          perl -0pi -e 's/(^\. tools\/ak3-core\.sh\n)/$1\nsync\nsleep 0.5\nchmod -R 755 "\${AKHOME}\/tools"\n/m' anykernel.sh
         fi
         
         ZIP_MODEL=$(echo "$OP_MODEL" | sed 's/-[0-9]\+\.[0-9]\+\.[0-9]\+$//')
@@ -2164,6 +2164,7 @@ runs:
 
     - name: Save ccache cache
       if: always() && steps.build_kernel_step.conclusion == 'success'
+      continue-on-error: true
       uses: ./action-source/.github/actions/cache/save
       with:
         cache_path: ${{ env.CCACHE_DIR }}
@@ -2176,6 +2177,7 @@ runs:
 
     - name: Save LTO LD cache
       if: always() && ${{ env.OP_LTO != 'none' }} && steps.build_kernel_step.conclusion == 'success'
+      continue-on-error: true
       uses: ./action-source/.github/actions/cache/save
       with:
         cache_path: ${{ env.LDCACHE_DIR }}

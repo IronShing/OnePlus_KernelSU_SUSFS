@@ -141,8 +141,10 @@ runs:
             for part in "${FILENAME}".part*; do
               echo "Uploading $part..."
               if ! upload_with_retry "$part"; then
-                echo "::error::Failed to upload part $part after multiple attempts."
-                exit 1
+                echo "::warning::Failed to upload cache part $part after multiple attempts. Continuing without saving cache."
+                rm -f "$part" "$FILENAME"
+                echo "::endgroup::"
+                exit 0
               fi
               rm -f "$part"
             done
@@ -150,8 +152,10 @@ runs:
           else
             echo "Uploading $FILENAME..."
             if ! upload_with_retry "$FILENAME"; then
-              echo "::error::Failed to upload $FILENAME after multiple attempts."
-              exit 1
+              echo "::warning::Failed to upload cache $FILENAME after multiple attempts. Continuing without saving cache."
+              rm -f "$FILENAME"
+              echo "::endgroup::"
+              exit 0
             fi
             rm -f "$FILENAME"
           fi
