@@ -22,3 +22,7 @@ Changes adopted from the Droidspaces references:
 - Extend Droidspaces build configs with IPC, PID, UTS, user namespaces, devtmpfs mount, and cgroup support.
 
 The Goldzxcbug 6.12.23 images are useful as Droidspaces/NTSync references, but they are not used as the base here because the WildKernels OP15 image already carries KernelSU-Next and SUSFS.
+
+Packaging and release reproduction notes:
+
+- [RedMagic 11 Pro NX809J Packaging Guide](nx809j-packaging.md)
