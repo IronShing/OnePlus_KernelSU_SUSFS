@@ -851,6 +851,10 @@ jobs:
           for file in $(find downloaded-artifacts -maxdepth 1 -name "*.zip" -type f | sort); do
             if [ -f "$file" ]; then
               zipname=$(basename "$file" .zip)
+              if [[ "$zipname" != AK3_* ]]; then
+                echo "Skipping non-kernel ZIP in device table: $zipname"
+                continue
+              fi
               rest="${zipname#AK3_}"
               IFS='_' read -ra parts <<< "$rest"
               model="${parts[0]}"
@@ -1200,7 +1204,8 @@ jobs:
           ## 🎉 Release Created Successfully
           
           **Tag:** [\`${{ env.NEW_TAG }}\`](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.NEW_TAG }})  
-          **Kernels:** $(find ./downloaded-artifacts -maxdepth 1 -name "*.zip" -type f | wc -l)
+          **Kernels:** $(find ./downloaded-artifacts -maxdepth 1 -name "AK3_*.zip" -type f | wc -l)
+          **Modules:** $(find ./downloaded-artifacts -maxdepth 1 -name "Droidspaces_*.zip" -type f | wc -l)
           
           ### 📦 Assets
           EOF
