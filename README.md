@@ -193,13 +193,13 @@ Image size: 40974848 bytes
 - Flash/test the AK3 first.
 - Install the Droidspaces KernelSU module only after Android boots.
 
-### Unsigned `.ko` Driver Policy
+### Unsigned `.ko` Driver Test Guide
 
 Android GKI can load unsigned `.ko` modules only when signature enforcement is
 not active and the module uses allowed KMI symbols. Unsigned support is not the
 same thing as "load any driver".
 
-For OP15 `android16-6.12.23`, the workflow now disables `MODULE_SIG_FORCE` and
+For OP15 `android16-6.12.23`, the workflow disables `MODULE_SIG_FORCE` and
 `MODULE_SIG_ALL` before `olddefconfig`, then validates the final `.config` and
 fails the build if unsafe enforcement is found:
 
@@ -211,26 +211,127 @@ module.sig_enforce=1
 
 `CONFIG_MODULE_SIG=y` may still exist. That only enables module signature
 support. It does not by itself force signed-only loading. The dangerous setting
-for unsigned modules is `CONFIG_MODULE_SIG_FORCE=y` or the boot parameter
-`module.sig_enforce=1`.
+for unsigned modules is `CONFIG_MODULE_SIG_FORCE=y`, runtime
+`sig_enforce=Y`, or the boot parameter `module.sig_enforce=1`.
 
-Before testing an external driver on the phone:
+Runtime must still be checked on the phone that will load the module. On the
+currently connected rooted test phone (`NX809J`, Android 16, running
+`6.12.23-android16-OP-WILD`), the observed state was:
 
-```sh
-zcat /proc/config.gz | grep MODULE_SIG
-cat /proc/cmdline
-modinfo driver.ko
-insmod driver.ko
-dmesg | tail -n 80
+```text
+CONFIG_MODULE_SIG=y
+# CONFIG_MODULE_SIG_FORCE is not set
+# CONFIG_MODULE_SIG_ALL is not set
+/sys/module/module/parameters/sig_enforce = N
+/proc/sys/kernel/modules_disabled = 0
 ```
 
-If loading fails, read `dmesg` first:
+This proves that this tested runtime was not enforcing signed-only modules. It
+does not prove that every OP15/NX809J/Android 16 device is identical, and it
+does not guarantee that an arbitrary driver works. Repeat the checks on the
+target phone after booting the target kernel.
 
-- signature/enforcement error: check `CONFIG_MODULE_SIG_FORCE` and
-  `module.sig_enforce=1`.
-- `vermagic` error: rebuild the module for the exact running kernel.
+#### Confirm The Phone Is Ready
+
+Run these commands from a computer with ADB access:
+
+```sh
+adb devices -l
+adb shell su -c 'uname -a'
+adb shell su -c 'zcat /proc/config.gz | grep MODULE_SIG'
+adb shell su -c 'cat /sys/module/module/parameters/sig_enforce 2>/dev/null || echo no-sig-enforce-param'
+adb shell su -c 'cat /proc/sys/kernel/modules_disabled 2>/dev/null || echo no-modules-disabled-sysctl'
+adb shell su -c 'grep -R "module.sig_enforce" /proc/cmdline /proc/bootconfig 2>/dev/null || true'
+```
+
+Expected safe result on the target phone:
+
+```text
+# CONFIG_MODULE_SIG_FORCE is not set
+# CONFIG_MODULE_SIG_ALL is not set
+sig_enforce = N
+modules_disabled = 0
+no module.sig_enforce=1 in cmdline or bootconfig
+```
+
+If `sig_enforce=Y`, `CONFIG_MODULE_SIG_FORCE=y`, or `module.sig_enforce=1` is
+present, unsigned `.ko` modules are expected to fail with a signature/key error.
+If the phone is not the device the kernel was built for, stop and use the
+correct kernel first.
+
+#### Test A Driver Safely
+
+Do not place a new driver in an auto-load path for the first test. Copy it to a
+manual test directory and load it only after Android has fully booted.
+
+```sh
+adb push driver.ko /data/local/tmp/driver.ko
+adb shell su -c 'chmod 0644 /data/local/tmp/driver.ko'
+adb shell su -c 'modinfo /data/local/tmp/driver.ko'
+adb shell su -c 'dmesg -C'
+adb shell su -c 'insmod /data/local/tmp/driver.ko'
+adb shell su -c 'dmesg | tail -n 120'
+adb shell su -c 'cat /proc/modules | grep -w driver || true'
+```
+
+If the module loads and must be removed:
+
+```sh
+adb shell su -c 'rmmod driver'
+adb shell su -c 'dmesg | tail -n 80'
+```
+
+Replace `driver` with the module name shown by `modinfo`, not necessarily the
+file name.
+
+#### How To Read `dmesg`
+
+These messages mean the unsigned module path is working, but the kernel is
+marking itself as tainted because the module is external and unsigned:
+
+```text
+module verification failed: signature and/or required key missing - tainting kernel
+Tainted: [O]=OOT_MODULE, [E]=UNSIGNED_MODULE
+```
+
+This message normally means signature enforcement is still blocking the module:
+
+```text
+Required key not available
+```
+
+These messages mean the module is not compatible with this kernel/KMI and must
+be rebuilt or fixed:
+
+```text
+Unknown symbol ... (err -2)
+disagrees about version of symbol ...
+invalid module format
+vermagic ...
+```
+
+Common causes:
+
+- `vermagic` mismatch: rebuild the module for the exact running kernel.
 - unknown symbol/KMI error: the driver uses symbols not exported through the
-  allowed KMI surface and must be fixed or rebuilt against allowed symbols.
+  allowed GKI KMI surface.
+- architecture mismatch: rebuild as `arm64/aarch64`.
+- dependency missing: load the required dependency module first.
+
+#### What Is And Is Not Supported
+
+Supported:
+
+- manually testing an unsigned `.ko` after Android boots.
+- loading a compatible unsigned module when `sig_enforce=N`.
+- diagnosing failures through `dmesg`.
+
+Not supported:
+
+- loading any random `.ko` regardless of KMI or symbols.
+- bypassing AVB/vbmeta/bootloader verification with this setting.
+- auto-loading an untested module during boot.
+- treating `CONFIG_MODULE_SIG=y` as a failure by itself.
 
 ### Latest Recovery Reference
 
