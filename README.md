@@ -94,6 +94,121 @@ You can also find Installation instructions in the release notes.
 
 ---
 
+## OP15 OOS16 AnyKernel Build Notes
+
+This section documents what was required to recover a bootable OP15 AnyKernel
+after test builds started bootlooping.
+
+### Known Good Target
+
+- Device target: `OP15`
+- OS target: `OOS16`
+- Kernel version: `android16-6.12.23`
+- KernelSU type: `KSUN`
+- Known working KernelSU Next ref:
+  `f1b64f440f3cd170e2a86d7816bef26fbdee1caa`
+- Known working SUSFS ref:
+  `7b3e90160043ffe844f3db34d8c7c57ff4789f53`
+- Expected KSUN version in the ZIP name/logs: `33169`
+
+### What Broke Boot
+
+The failed AnyKernel builds were not caused by module signature changes.
+The likely bootloop cause was that Droidspaces/RedMagic container configs were
+added globally to `gki_defconfig`, so they were also applied to OP15.
+
+These configs changed the OP15 kernel `Image` size and produced non-booting
+AnyKernel ZIPs:
+
+```text
+CONFIG_NAMESPACES=y
+CONFIG_IPC_NS=y
+CONFIG_UTS_NS=y
+CONFIG_USER_NS=y
+CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_CGROUPS=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_MEMCG=y
+```
+
+Do not apply those container/Droidspaces configs globally for OP15. If they are
+needed later, gate them per-device and test with `fastboot boot` before
+publishing a flashable release.
+
+### What Was Needed For The Functional AnyKernel
+
+- Restored the OP15 kernel patch flow to match the previously boot-tested
+  WildKernels path.
+- Removed dynamic KernelSU/SUSFS source edits that changed the final kernel
+  `Image`.
+- Removed the global Droidspaces/namespace/cgroup config injection from OP15.
+- Kept automatic release publishing enabled.
+- Kept the Droidspaces daemon/init as a separate KernelSU module ZIP.
+- Kept the Droidspaces module files vendored locally under:
+  `vendor/droidspaces-module`
+
+The Droidspaces module must remain separate from the AnyKernel boot image. It
+should be installed only after the OP15 kernel boots successfully.
+
+### How To Trigger The OP15 Build
+
+Use the workflow manually with:
+
+```powershell
+gh workflow run build-kernel-release.yml `
+  --repo Coding-BR/OnePlus_KernelSU_SUSFS `
+  --ref main `
+  -f make_release=true `
+  -f op_model=OP15
+```
+
+The workflow defaults are pinned to the known working KSUN and SUSFS refs above.
+Do not pass malformed JSON through PowerShell for `ksu_options`; if custom JSON
+is required, verify the run reaches the matrix generation step successfully.
+
+### Validation Checklist Before Flashing
+
+After the Action finishes:
+
+- Confirm the release contains an `AK3_OP15_OOS16_android16-6.12.23_KSUN_33169`
+  ZIP.
+- Confirm the release also contains the separate
+  `Droidspaces_Daemon_Init_KernelSU_OP15_OOS16_android16-6.12.23_KSUN_33169`
+  ZIP when Droidspaces packaging is enabled.
+- Extract the AK3 ZIP and compare the internal `Image` size with the known-good
+  OP15 build. The recovered functional-size target was:
+
+```text
+Image size: 40974848 bytes
+```
+
+- A bad bootlooping build had a larger `Image`, around:
+
+```text
+41044480 bytes
+41048576 bytes
+```
+
+- Flash/test the AK3 first.
+- Install the Droidspaces KernelSU module only after Android boots.
+
+### Latest Recovery Reference
+
+The recovery build that removed the global Droidspaces configs was generated
+from:
+
+```text
+Commit: 2ed51cf fix(op15): stop applying droidspaces configs globally
+Run:    27830882926
+AK3:    AK3_OP15_OOS16_android16-6.12.23_KSUN_33169_SuSFS_v2.1.0.zip
+SHA256: 021403fb5254f41c69a9c0a4ca868051c23ecc9e181f68840924bafe5b6d5984
+Module: Droidspaces_Daemon_Init_KernelSU_OP15_OOS16_android16-6.12.23_KSUN_33169.zip
+SHA256: 4446e5db99964e626a7d038eb35b7e65ba5a3cb5ac8c7805b5b3d6517d4f7a49
+```
+
+---
+
 ## 🌟 Special Thanks
 
 **These amazing people help make this project possible! ❤️**
