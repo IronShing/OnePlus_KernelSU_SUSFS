@@ -1507,9 +1507,17 @@ runs:
         patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/common/droidspaces/0001-Return-ghost-task-if-task-is-null-and-is-requested-b.patch"
         
         cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
+        CONFIG_NAMESPACES=y
         CONFIG_SYSVIPC=y
+        CONFIG_IPC_NS=y
+        CONFIG_UTS_NS=y
         CONFIG_DEVTMPFS=y
+        CONFIG_DEVTMPFS_MOUNT=y
         CONFIG_PID_NS=y
+        CONFIG_CGROUPS=y
+        CONFIG_CGROUP_NS=y
+        CONFIG_CGROUP_DEVICE=y
+        CONFIG_CGROUP_PIDS=y
         CONFIG_POSIX_MQUEUE=y
         CONFIG_NETFILTER_XT_TARGET_REJECT=y
         CONFIG_NETFILTER_XT_TARGET_LOG=y
@@ -1721,6 +1729,39 @@ runs:
         fi
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" olddefconfig
+
+        if [ "${{ env.OP_DS }}" = "true" ]; then
+          echo "::group::Validate Droidspaces kernel config"
+          CONFIG_FILE="$OUT/.config"
+          required_droidspaces_configs=(
+            CONFIG_NAMESPACES
+            CONFIG_SYSVIPC
+            CONFIG_IPC_NS
+            CONFIG_UTS_NS
+            CONFIG_PID_NS
+            CONFIG_POSIX_MQUEUE
+            CONFIG_CGROUPS
+            CONFIG_CGROUP_NS
+            CONFIG_CGROUP_PIDS
+          )
+
+          missing=()
+          for cfg in "${required_droidspaces_configs[@]}"; do
+            if ! grep -qx "${cfg}=y" "$CONFIG_FILE"; then
+              missing+=("$cfg")
+            fi
+          done
+
+          grep -E '^(CONFIG_NAMESPACES|CONFIG_SYSVIPC|CONFIG_IPC_NS|CONFIG_UTS_NS|CONFIG_PID_NS|CONFIG_POSIX_MQUEUE|CONFIG_CGROUPS|CONFIG_CGROUP_NS|CONFIG_CGROUP_PIDS)=' "$CONFIG_FILE" || true
+
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::Droidspaces kernel config missing after olddefconfig: ${missing[*]}"
+            exit 1
+          fi
+
+          echo "Droidspaces kernel config OK."
+          echo "::endgroup::"
+        fi
 
         if [ "$OP_MODEL" = "OP15" ] && [ "$ANDROID_VER" = "android16" ] && [ "$KERNEL_VER" = "6.12" ]; then
           echo "::group::Validate OP15 unsigned module policy"

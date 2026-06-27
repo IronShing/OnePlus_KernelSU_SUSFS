@@ -59,6 +59,7 @@ REQUIRED = {
 
 def add_bytes(zout: zipfile.ZipFile, arcname: str, data: bytes, mode: int) -> None:
     info = zipfile.ZipInfo(arcname)
+    info.create_system = 3
     info.external_attr = (mode & 0xFFFF) << 16
     info.compress_type = zipfile.ZIP_DEFLATED
     zout.writestr(info, data)
@@ -68,6 +69,7 @@ def add_file(zout: zipfile.ZipFile, root: Path, file_path: Path) -> None:
     arcname = file_path.relative_to(root).as_posix()
     mode = 0o755 if arcname in EXECUTABLES else 0o644
     info = zipfile.ZipInfo(arcname)
+    info.create_system = 3
     info.external_attr = (stat.S_IFREG | mode) << 16
     info.compress_type = zipfile.ZIP_DEFLATED
     with file_path.open("rb") as src:
