@@ -1741,7 +1741,6 @@ runs:
             CONFIG_PID_NS
             CONFIG_POSIX_MQUEUE
             CONFIG_CGROUPS
-            CONFIG_CGROUP_NS
             CONFIG_CGROUP_PIDS
           )
 
@@ -1753,6 +1752,9 @@ runs:
           done
 
           grep -E '^(CONFIG_NAMESPACES|CONFIG_SYSVIPC|CONFIG_IPC_NS|CONFIG_UTS_NS|CONFIG_PID_NS|CONFIG_POSIX_MQUEUE|CONFIG_CGROUPS|CONFIG_CGROUP_NS|CONFIG_CGROUP_PIDS)=' "$CONFIG_FILE" || true
+          if ! grep -qx "CONFIG_CGROUP_NS=y" "$CONFIG_FILE"; then
+            echo "::notice::CONFIG_CGROUP_NS was not kept by olddefconfig; continuing because it is optional for Droidspaces startup."
+          fi
 
           if [ "${#missing[@]}" -ne 0 ]; then
             echo "::error::Droidspaces kernel config missing after olddefconfig: ${missing[*]}"
