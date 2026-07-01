@@ -1119,6 +1119,17 @@ runs:
           fi
         fi
 
+        # NX809J (RedMagic 11 Pro): share the camera MCLK pin + CAM regulator gpio
+        # between the main sensor and its EEPROM (see configs/patches/). No-op on
+        # devices whose DT does not share these pins (e.g. OnePlus 15). Opt-in via
+        # the "cam_pin_share" config flag.
+        if [ "${{ env.OP_CAM_PIN_SHARE }}" = "true" ]; then
+          echo "::group::Apply NX809J camera pin-sharing patch"
+          patch -p1 --forward --fuzz=3 < "$GITHUB_WORKSPACE/configs/patches/nx809j-camera-pin-sharing.patch" \
+            || { echo "::error::NX809J camera pin-sharing patch failed to apply"; exit 1; }
+          echo "::endgroup::"
+        fi
+
         # Fake kernel patch to fix failures
         fake_patched=0
         fake_patched_expand=0

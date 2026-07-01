@@ -2,6 +2,24 @@
 
 This document records the known-working packaging flow used for the RedMagic 11 Pro / NX809J tests.
 
+## Camera Pin-Sharing Fix (main rear camera)
+
+The NX809J's main rear camera (ov50e40) and its EEPROM share the same MCLK pin
+(GPIO_91) and the same `CAM_VIO` regulator gpio (533). Upstream GKI 6.12 pinctrl
+and gpiolib enforce strict single ownership, so the EEPROM's second claim fails
+with `-EBUSY` (`pin GPIO_91 already requested ... cannot claim`,
+`cam_res_mgr_gpio_request: gpio 533 fails -16`) — the sensor never powers up and
+`vendor.qti.camera.provider` crashes, so the main sensor cannot be opened at all.
+
+The stock Nubia downstream kernel refcount-shared these. The fix is a small
+kernel-source patch (`configs/patches/nx809j-camera-pin-sharing.patch`, touching
+`drivers/pinctrl/pinmux.c` and `drivers/gpio/gpiolib.c`) that restores the
+sharing. It is applied during the CI build when the device config sets
+`"cam_pin_share": true` (enabled in `configs/a16/OP15.json`, the config used for
+the NX809J build). The patch is a no-op on hardware whose device tree does not
+share these pins (e.g. the OnePlus 15), because the shared-claim code paths are
+only reached when two sub-devices request the same pin/gpio.
+
 The working kernel image is the original WildKernels OP15 image from:
 
 `AK3_OP15_OOS16_android16-6.12.23_KSUN_33169_SuSFS_v2.1.0.zip`

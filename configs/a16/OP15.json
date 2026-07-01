@@ -23,5 +23,6 @@
   "ip_set": true,
   "unicode": true,
   "ntsync": true,
-  "uname": "OP-WILD"
+  "uname": "OP-WILD",
+  "cam_pin_share": true
 }
