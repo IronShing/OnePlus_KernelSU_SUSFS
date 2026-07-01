@@ -366,10 +366,12 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        f="$COMMON_KERNEL_FOLDER/drivers/pinctrl/pinmux.c"
-        echo "NX809J: patching $f"
-        curl -fsSL "https://raw.githubusercontent.com/IronShing/android_kernel_common_oneplus_sm8850/nx809j-camfix/drivers/pinctrl/pinmux.c" -o "$f"
-        grep -q "sharing for" "$f" && echo "NX809J camera pinctrl fix applied" || { echo "NX809J camfix FAILED"; exit 1; }
+        base="https://raw.githubusercontent.com/IronShing/android_kernel_common_oneplus_sm8850/nx809j-camfix"
+        curl -fsSL "$base/drivers/pinctrl/pinmux.c" -o "$COMMON_KERNEL_FOLDER/drivers/pinctrl/pinmux.c"
+        curl -fsSL "$base/drivers/gpio/gpiolib.c"   -o "$COMMON_KERNEL_FOLDER/drivers/gpio/gpiolib.c"
+        grep -q "sharing for" "$COMMON_KERNEL_FOLDER/drivers/pinctrl/pinmux.c" || { echo "pinmux FAILED"; exit 1; }
+        grep -q "strncmp(label, .CAM., 3)" "$COMMON_KERNEL_FOLDER/drivers/gpio/gpiolib.c" || { echo "gpiolib FAILED"; exit 1; }
+        echo "NX809J camera fixes (pinmux+gpiolib) applied"
 
     - name: Set Kernel build-tools to Path
       shell: bash
