@@ -1,67 +1,152 @@
-Subject: [PATCH] NX809J (RedMagic 11 Pro): share camera MCLK pin + CAM regulator gpio
+Subject: [PATCH] NX809J (RedMagic 11 Pro): share camera MCLK pin + refcount CAM regulator gpio
 
 On the Nubia RedMagic 11 Pro (NX809J, SM8850 / canoe) the main rear camera
 (ov50e40) and its EEPROM both select the same MCLK pinctrl function (GPIO_91)
 and both request the same CAM_VIO regulator gpio (gpio 533). The QTI camera
 stack (cam_res_mgr / cam_sensor) relies on the kernel refcount-SHARING these
 between the sensor and eeprom sub-devices, which the stock Nubia downstream
-kernel did.
-
-The upstream GKI 6.12 pinctrl/gpiolib cores enforce strict single ownership,
+kernel did. Upstream GKI 6.12 pinctrl/gpiolib enforce strict single ownership,
 so the second claim is rejected with -EBUSY:
 
   canoe-pinctrl: pin GPIO_91 already requested by ...cam-sensor0;
                  cannot claim for qcom,eeprom0
-  cam_sensor_core_power_up: cannot set pin to active state
   cam_res_mgr_gpio_request: gpio 533:CAM_VIO0 fails -16
 
-which aborts sensor power-up and crashes vendor.qti.camera.provider (SIGABRT
-in SensorDevice::InitializeHardware) -> the camera app cannot open the main
-sensor at all.
+which aborts sensor power-up and crashes vendor.qti.camera.provider -> the
+camera app cannot open the main sensor at all.
 
 Two narrowly-scoped changes restore the sharing:
 
 1. pinctrl/pinmux.c pin_request(): on a same-pin second claim by a different
    owner (mux or gpio path), refcount-share instead of returning -EBUSY.
-2. gpio/gpiolib.c gpiod_request_commit(): allow a second request for camera
-   gpios (label prefixed "CAM") — the pin is already fully set up by the first
-   requester. Non-camera gpios keep the strict single-owner rule.
+2. gpio/gpiolib.c gpiod_request_commit()/gpiod_free_commit(): reference-count
+   camera gpios (label prefixed "CAM") shared between sub-devices, so the gpio
+   is only actually released once every camera sub-device has freed it. (A
+   plain "return 0 on 2nd request" leaks the request/free balance: whichever
+   sub-device frees first releases the gpio while the other still needs it,
+   which under rapid camera open/close leaves the regulator gpio in a bad state.)
 
 Both are no-ops on hardware whose device tree does not share these pins (e.g.
-the OnePlus 15), because the shared-claim paths are only reached when two
-sub-devices request the same pin/gpio.
+the OnePlus 15), because the shared paths are only reached when two sub-devices
+request the same pin/gpio.
 ---
- drivers/gpio/gpiolib.c   | 15 ++++++++++++++-
- drivers/pinctrl/pinmux.c | 23 +++++++++++++++++------
- 2 files changed, 31 insertions(+), 7 deletions(-)
-
 diff --git a/drivers/gpio/gpiolib.c b/drivers/gpio/gpiolib.c
-index 1e8f0bdb6..55481d36c 100644
+index 1e8f0bdb6..b6ca311d6 100644
 --- a/drivers/gpio/gpiolib.c
 +++ b/drivers/gpio/gpiolib.c
-@@ -2322,8 +2322,21 @@ static int gpiod_request_commit(struct gpio_desc *desc, const char *label)
+@@ -2313,6 +2313,74 @@ EXPORT_SYMBOL_GPL(gpiochip_remove_pin_ranges);
+  * on each other, and help provide better diagnostics in debugfs.
+  * They're called even less than the "set direction" calls.
+  */
++/*
++ * NX809J camera fix: reference-count gpios shared between camera sub-devices
++ * (e.g. CAM_VIO0, gpio 533, requested by both cam-sensor0 and its eeprom0).
++ * Upstream gpiolib enforces single ownership; the stock Nubia kernel shared
++ * these. Simply returning 0 on the 2nd request (with no tracking) leaks the
++ * request/free balance: whichever sub-device frees first clears FLAG_REQUESTED
++ * while the other still needs it, so under rapid camera open/close the sensor's
++ * regulator gpio ends up in the wrong state and wedges the CCI I2C bus (black
++ * preview). Track a small refcount so the gpio is only really freed once every
++ * camera sub-device that shares it has released it — order-independent.
++ */
++#define CAM_SHARED_GPIO_MAX 16
++static struct {
++	struct gpio_desc *desc;
++	int count;
++} cam_shared_gpio[CAM_SHARED_GPIO_MAX];
++static DEFINE_SPINLOCK(cam_shared_gpio_lock);
++
++/* A 2nd+ requester of an already-requested cam gpio. Returns true if tracked. */
++static bool cam_shared_gpio_get(struct gpio_desc *desc)
++{
++	unsigned long flags;
++	int i, slot = -1;
++	bool ok = false;
++
++	spin_lock_irqsave(&cam_shared_gpio_lock, flags);
++	for (i = 0; i < CAM_SHARED_GPIO_MAX; i++) {
++		if (cam_shared_gpio[i].desc == desc) {
++			cam_shared_gpio[i].count++;
++			ok = true;
++			goto out;
++		}
++		if (!cam_shared_gpio[i].desc && slot < 0)
++			slot = i;
++	}
++	if (slot >= 0) {
++		cam_shared_gpio[slot].desc = desc;
++		cam_shared_gpio[slot].count = 2; /* original owner + this requester */
++		ok = true;
++	}
++out:
++	spin_unlock_irqrestore(&cam_shared_gpio_lock, flags);
++	return ok;
++}
++
++/* Release path. Returns true if the gpio is still shared (do not free yet). */
++static bool cam_shared_gpio_put(struct gpio_desc *desc)
++{
++	unsigned long flags;
++	bool busy = false;
++	int i;
++
++	spin_lock_irqsave(&cam_shared_gpio_lock, flags);
++	for (i = 0; i < CAM_SHARED_GPIO_MAX; i++) {
++		if (cam_shared_gpio[i].desc == desc) {
++			if (--cam_shared_gpio[i].count > 0) {
++				busy = true;
++			} else {
++				cam_shared_gpio[i].desc = NULL;
++				cam_shared_gpio[i].count = 0;
++			}
++			break;
++		}
++	}
++	spin_unlock_irqrestore(&cam_shared_gpio_lock, flags);
++	return busy;
++}
++
+ static int gpiod_request_commit(struct gpio_desc *desc, const char *label)
+ {
+ 	unsigned int offset;
+@@ -2322,8 +2390,20 @@ static int gpiod_request_commit(struct gpio_desc *desc, const char *label)
  	if (!guard.gc)
  		return -ENODEV;
  
 -	if (test_and_set_bit(FLAG_REQUESTED, &desc->flags))
 +	if (test_and_set_bit(FLAG_REQUESTED, &desc->flags)) {
 +		/*
-+		 * NX809J camera fix: the QTI cam_res_mgr requests the same shared
-+		 * regulator/reset gpio (e.g. CAM_VIO0, gpio 533) once per sub-device
-+		 * — the main sensor and its EEPROM both request it. Upstream gpiolib
-+		 * rejects the 2nd request with -EBUSY, which fails the sensor power-up
-+		 * and crashes the camera provider. The stock Nubia kernel shared it.
-+		 * The pin is already fully set up by the first requester, so allow a
-+		 * 2nd claim for camera gpios (label prefixed "CAM") — narrowly scoped
-+		 * so non-camera gpios keep the strict single-owner rule.
++		 * NX809J camera fix: allow a 2nd claim for a camera gpio (label
++		 * prefixed "CAM") that a prior sub-device already requested, and
++		 * reference-count it so the request/free balance is preserved (see
++		 * cam_shared_gpio_get/put above). Non-camera gpios keep the strict
++		 * single-owner rule.
 +		 */
-+		if (label && !strncmp(label, "CAM", 3))
++		if (label && !strncmp(label, "CAM", 3)) {
++			cam_shared_gpio_get(desc);
 +			return 0;
++		}
  		return -EBUSY;
 +	}
  
  	/* NOTE:  gpio_request() can be called in early boot,
  	 * before IRQs are enabled, for non-sleeping (SOC) GPIOs.
+@@ -2410,6 +2490,15 @@ static void gpiod_free_commit(struct gpio_desc *desc)
+ 
+ 	might_sleep();
+ 
++	/*
++	 * NX809J camera fix: if this gpio is shared between camera sub-devices,
++	 * only actually release it once the last sharer frees it (see
++	 * cam_shared_gpio_get/put). Prevents the regulator gpio from being torn
++	 * down while another sub-device still holds it.
++	 */
++	if (cam_shared_gpio_put(desc))
++		return;
++
+ 	CLASS(gpio_chip_guard, guard)(desc);
+ 
+ 	flags = READ_ONCE(desc->flags);
 diff --git a/drivers/pinctrl/pinmux.c b/drivers/pinctrl/pinmux.c
 index 2c31e7f2a..729d63eea 100644
 --- a/drivers/pinctrl/pinmux.c
