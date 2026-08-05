@@ -1187,7 +1187,44 @@ runs:
           fi
         fi
 
+        # NX809J: susfs4ksu's gki-android16-6.12 patch (both the stable and -dev
+        # branches) is still written against an older android16-6.12 sublevel. On
+        # AOSP GKI 6.12.81 (tag android16-6.12-2026-06_r8) two hunks lose their
+        # context and the patch exits 1:
+        #   fs/exec.c        - AOSP inserted <linux/dma-buf.h> right after <linux/ksm.h>
+        #   fs/proc/task_mmu.c - AOSP renamed vma_pages() -> vma_data_pages() in show_smap()
+        # Neither is a semantic conflict, so use the same "fake patch then revert"
+        # idiom as the older kernels above: match SUSFS's expected context, apply,
+        # then restore the upstream code. Both edits are guarded on the SUSFS
+        # markers being absent, so they no-op if SUSFS ever catches up.
+        susfs_ctx_dmabuf=0
+        susfs_ctx_vmadata=0
+        if [ "${{ env.ANDROID_VER }}" = "android16" ] && [ "${{ env.KERNEL_VER }}" = "6.12" ]; then
+          if grep -qxF '#include <linux/dma-buf.h>' ./fs/exec.c && ! grep -qF 'susfs_def.h' ./fs/exec.c; then
+            echo "SUSFS context fixup: temporarily dropping <linux/dma-buf.h> from fs/exec.c"
+            sed -i '\|^#include <linux/dma-buf\.h>$|d' ./fs/exec.c
+            susfs_ctx_dmabuf=1
+          fi
+          if grep -qF 'if (!vma_data_pages(vma))' ./fs/proc/task_mmu.c && ! grep -qF 'SUSFS_IS_INODE_SUS_MAP' ./fs/proc/task_mmu.c; then
+            echo "SUSFS context fixup: temporarily renaming vma_data_pages() -> vma_pages() in show_smap()"
+            sed -i 's/if (!vma_data_pages(vma))/if (!vma_pages(vma))/' ./fs/proc/task_mmu.c
+            susfs_ctx_vmadata=1
+          fi
+        fi
+
         patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch"
+
+        # Restore the upstream code the SUSFS context fixup above touched
+        if [ "$susfs_ctx_vmadata" = 1 ]; then
+          sed -i 's/if (!vma_pages(vma))/if (!vma_data_pages(vma))/' ./fs/proc/task_mmu.c
+          grep -qF 'if (!vma_data_pages(vma))' ./fs/proc/task_mmu.c \
+            || { echo "::error::failed to restore vma_data_pages() in fs/proc/task_mmu.c"; exit 1; }
+        fi
+        if [ "$susfs_ctx_dmabuf" = 1 ]; then
+          sed -i '\|^#include <linux/ksm\.h>$|a #include <linux/dma-buf.h>' ./fs/exec.c
+          grep -qxF '#include <linux/dma-buf.h>' ./fs/exec.c \
+            || { echo "::error::failed to restore <linux/dma-buf.h> in fs/exec.c"; exit 1; }
+        fi
 
         # Revert Fake kernel patch
         if [ "$fake_patched_expand" = 1 ]; then
