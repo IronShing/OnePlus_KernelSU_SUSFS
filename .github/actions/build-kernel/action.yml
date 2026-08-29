@@ -1130,6 +1130,19 @@ runs:
           echo "::endgroup::"
         fi
 
+        # NX809J (RedMagic 11 Pro): expose fixed refresh-rate modes (30/60/90/120) for
+        # external DP sinks, so a marginal USB-C cable/dock that cannot carry the top of a
+        # VRR range can drive a lower rate. Additive and self-filtering (a no-op on sinks
+        # without a VRR range, invalid modes dropped by .mode_valid). Gated on the same
+        # canoe build marker as the camera patch (cam_pin_share is true only in the
+        # canoe/OP15 config used for NX809J). See configs/patches/.
+        if [ "${{ env.OP_CAM_PIN_SHARE }}" = "true" ]; then
+          echo "::group::Apply NX809J DP virtual-modes patch"
+          patch -p1 --forward --fuzz=3 < "$GITHUB_WORKSPACE/configs/patches/nx809j-dp-virtual-modes.patch" \
+            || { echo "::error::NX809J DP virtual-modes patch failed to apply"; exit 1; }
+          echo "::endgroup::"
+        fi
+
         # Fake kernel patch to fix failures
         fake_patched=0
         fake_patched_expand=0
