@@ -1632,6 +1632,7 @@ runs:
         CONFIG_SYSVIPC=y
         CONFIG_DEVTMPFS=y
         CONFIG_PID_NS=y
+        CONFIG_USER_NS=y
         CONFIG_POSIX_MQUEUE=y
         CONFIG_NETFILTER_XT_TARGET_REJECT=y
         CONFIG_NETFILTER_XT_TARGET_LOG=y
@@ -1851,6 +1852,7 @@ runs:
           required_droidspaces_configs=(
             CONFIG_SYSVIPC
             CONFIG_PID_NS
+            CONFIG_USER_NS
             CONFIG_POSIX_MQUEUE
           )
 
@@ -1861,7 +1863,7 @@ runs:
             fi
           done
 
-          grep -E '^(CONFIG_SYSVIPC|CONFIG_PID_NS|CONFIG_POSIX_MQUEUE)=' "$CONFIG_FILE" || true
+          grep -E '^(CONFIG_SYSVIPC|CONFIG_PID_NS|CONFIG_USER_NS|CONFIG_POSIX_MQUEUE)=' "$CONFIG_FILE" || true
 
           if [ "${#missing[@]}" -ne 0 ]; then
             echo "::error::Droidspaces kernel config missing after olddefconfig: ${missing[*]}"
