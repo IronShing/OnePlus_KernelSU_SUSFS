@@ -859,8 +859,12 @@ runs:
         if [ "${{ env.OP_SUSFS }}" = true ]; then
           echo "Using SUSFS branch/commit: $SUSFS_BRANCH"
           if ! retry_fetch_archive "https://gitlab.com/simonpunk/susfs4ksu.git" "$SUSFS_BRANCH"; then
-            echo "::error::Failed to fetch SUSFS archive after multiple attempts"
-            exit 1
+            echo "::warning::SUSFS archive fetch failed (GitLab archive endpoint blocks aria2c); falling back to git clone"
+            rm -rf susfs4ksu 2>/dev/null
+            if ! retry_clone "https://gitlab.com/simonpunk/susfs4ksu.git" "$SUSFS_BRANCH" "1"; then
+              echo "::error::Failed to fetch SUSFS via archive AND git clone"
+              exit 1
+            fi
           fi
           echo "SUSFS_COMMIT_SHA=$SUSFS_BRANCH" >> $GITHUB_ENV
         fi
