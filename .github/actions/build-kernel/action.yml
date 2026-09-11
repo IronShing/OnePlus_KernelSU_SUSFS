@@ -937,6 +937,36 @@ runs:
         echo "✅ KernelSU Next added (commit: ${KSU_COMMIT_SHA:0:8})"
         echo "::endgroup::"
 
+    - name: Add SukiSU-Ultra
+      shell: bash
+      if: ${{ inputs.ksu_type == 'SUKISU' }}
+      run: |
+        set -euo pipefail
+        echo "::group::Add SukiSU-Ultra (ReSukiSU)"
+        cd "$KERNEL_PLATFORM_FOLDER"
+        SUKI_BRANCH="${{ inputs.ksu_branch_or_hash }}"
+        [ -z "$SUKI_BRANCH" ] && SUKI_BRANCH="susfs-main"
+        echo "Adding SukiSU-Ultra on SuSFS branch: $SUKI_BRANCH"
+        # SukiSU-Ultra integrates itself + its SuSFS glue into the GKI tree. On the
+        # susfs-* branch it is designed to sit on SuSFS the same way KernelSU-Next did.
+        curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$SUKI_BRANCH"
+        git submodule update --init --recursive || true
+        # SukiSU-Ultra lands as ./KernelSU (it is a KernelSU fork)
+        if [ -d KernelSU ]; then KSU_DIR=KernelSU; else KSU_DIR=$(find . -maxdepth 1 -type d -iname '*ksu*' -o -maxdepth 1 -type d -iname '*sukisu*' | head -1); fi
+        KSU_COMMIT_SHA=$( (cd "$KSU_DIR" 2>/dev/null && git rev-parse HEAD) 2>/dev/null || echo unknown )
+        echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
+        echo "Add SukiSU-Ultra config"
+        cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
+        CONFIG_KSU=y
+        CONFIG_KPM=y
+        EOF
+        echo "SUKISU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
+        echo "SukiSU-$SUKI_BRANCH" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
+        echo "KSUVER=SukiSU-$SUKI_BRANCH" >> $GITHUB_ENV
+        echo "NEED_HOOKS=false" >> $GITHUB_ENV
+        echo "✅ SukiSU-Ultra added ($SUKI_BRANCH, commit ${KSU_COMMIT_SHA:0:8})"
+        echo "::endgroup::"
+
     - name: Add KernelSU
       shell: bash
       if: ${{ inputs.ksu_type == 'KSU' }}
