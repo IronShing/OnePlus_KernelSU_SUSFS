@@ -209,6 +209,7 @@ jobs:
           ksu_type=$(echo "$ksu_options_normalized" | jq -r '.[0].type')
           ksu_ref=$(echo "$ksu_options_normalized" | jq -r '.[0].hash')
 
+          if [ "$ksu_type" != "NONE" ]; then
           if [ "$ksu_type" == "KSUN" ]; then
             KSU_REPO_OWNER="KernelSU-Next"
             KSU_REPO_NAME="KernelSU-Next"
@@ -265,6 +266,11 @@ jobs:
 
           # Inject ksu_resolved_hash into each device in the matrix
           merged_matrix=$(echo "$merged_matrix" | jq  --arg resolved_sha "$resolved_sha" 'map(.ksu_resolved_hash = $resolved_sha)')
+          else
+            echo "ksu_type=NONE: non-root build, skipping KSU resolution"
+            echo "ksu_resolved_hash=" >> "$GITHUB_OUTPUT"
+            merged_matrix=$(echo "$merged_matrix" | jq 'map(.ksu_resolved_hash = "")')
+          fi
 
           # SUSFS hash fetch
           SUSFS_REPO="https://gitlab.com/simonpunk/susfs4ksu.git"
