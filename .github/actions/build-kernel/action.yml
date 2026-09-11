@@ -1073,6 +1073,14 @@ runs:
           echo "NEED_HOOKS=false" >> $GITHUB_ENV
         fi
 
+        # NX809J/ReSukiSU: SukiSU-Ultra (setup.sh on the susfs-main branch) already integrates
+        # SuSFS into its own driver. Re-applying the mainline KernelSU 10_enable_susfs_for_ksu
+        # patch on top double-patches kernel/core/init.c (hunks 3 & 7 reject -> undeclared
+        # ksu_lsm_hook_init / ksu_syscall_hook_manager_init). Skip the external driver patch
+        # for SUKISU; the fs/ + include/linux susfs sources copied above are still in place.
+        if [ "${{ inputs.ksu_type }}" = "SUKISU" ]; then
+          echo "SUKISU: SukiSU-Ultra bundles its own SuSFS driver integration; skipping external 10_enable_susfs_for_ksu.patch."
+        else
         case "$susfs_version" in
           "v1.5.8")
             if [ "${{ inputs.ksu_type }}" = "KSUN" ]; then
@@ -1172,6 +1180,7 @@ runs:
             exit 1
             ;;
         esac
+        fi
 
         cd "$COMMON_KERNEL_FOLDER"
         if [ "${{ env.ANDROID_VER }}" = "android15" ] && [ "${{ env.KERNEL_VER }}" = "6.6" ]; then
