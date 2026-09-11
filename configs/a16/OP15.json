@@ -24,5 +24,5 @@
   "unicode": true,
   "ntsync": true,
   "uname": "OP-WILD",
-  "cam_pin_share": true
+  "cam_pin_share": false
 }
