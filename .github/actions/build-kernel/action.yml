@@ -1113,8 +1113,8 @@ runs:
         # patch on top double-patches kernel/core/init.c (hunks 3 & 7 reject -> undeclared
         # ksu_lsm_hook_init / ksu_syscall_hook_manager_init). Skip the external driver patch
         # for SUKISU; the fs/ + include/linux susfs sources copied above are still in place.
-        if [ "${{ inputs.ksu_type }}" = "SUKISU" ]; then
-          echo "SUKISU: SukiSU-Ultra bundles its own SuSFS driver integration; skipping external 10_enable_susfs_for_ksu.patch."
+        if [ "${{ inputs.ksu_type }}" = "SUKISU" ] || [ "${{ inputs.ksu_type }}" = "RESUKISU" ]; then
+          echo "${{ inputs.ksu_type }}: bundles its own SuSFS driver support; skipping the external KernelSU 10_enable_susfs_for_ksu.patch (it breaks this fork's Kconfig). The fs/ + include/linux SuSFS sources copied above stay in place."
         else
         case "$susfs_version" in
           "v1.5.8")
