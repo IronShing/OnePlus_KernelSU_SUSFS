@@ -1030,7 +1030,21 @@ runs:
         echo "ReSukiSU-${RESUKI_REF:-latest}" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
         echo "KSUVER=ReSukiSU-${RESUKI_REF:-latest}" >> $GITHUB_ENV
         echo "NEED_HOOKS=false" >> $GITHUB_ENV
-        echo "✅ ReSukiSU added (commit ${KSU_COMMIT_SHA:0:8})"
+        # SuSFS for ReSukiSU: use cctv18/susfs4oki (the ReSukiSU-matched fork). Mainline
+        # simonpunk susfs (what the shared Apply-SUSFS step ships) lacks ReSukiSU's
+        # no_su / zygote_next API, so its driver fails to link. susfs4oki is GitHub-hosted
+        # (no GitLab runner-IP block) and its 10_enable patch defines exactly those symbols.
+        echo "-- SuSFS via susfs4oki --"
+        OKI="$GITHUB_WORKSPACE/susfs4oki"; rm -rf "$OKI"
+        git clone --depth=1 -b oki-android16-6.12 https://github.com/cctv18/susfs4oki.git "$OKI"
+        cp "$OKI/kernel_patches/fs/"* "$COMMON_KERNEL_FOLDER/fs/"
+        cp "$OKI/kernel_patches/include/linux/"* "$COMMON_KERNEL_FOLDER/include/linux/"
+        ( cd "$COMMON_KERNEL_FOLDER" && patch -p1 --forward --fuzz=3 < "$OKI/kernel_patches/50_add_susfs_in_gki-android16-6.12.patch" || true )
+        ( cd "$KERNEL_PLATFORM_FOLDER/$KSU_DIR" && patch -p1 --forward --fuzz=3 < "$OKI/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true )
+        SUSVER=$(grep '#define SUSFS_VERSION' "$COMMON_KERNEL_FOLDER/include/linux/susfs.h" | awk -F'"' '{print $2}')
+        echo "SUSVER=$SUSVER" >> $GITHUB_ENV
+        echo "$SUSVER" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
+        echo "✅ ReSukiSU added (commit ${KSU_COMMIT_SHA:0:8}), SuSFS susfs4oki $SUSVER"
         echo "::endgroup::"
 
     - name: Add KernelSU
@@ -1083,7 +1097,9 @@ runs:
 
     - name: Apply SUSFS Patches
       shell: bash
-      if: ${{ env.OP_SUSFS == 'true' }}
+      # ReSukiSU handles its own SuSFS (susfs4oki) in the Add-ReSukiSU step; skip the shared
+      # mainline-susfs path so it doesn't clobber susfs4oki's fs/ with an incompatible version.
+      if: ${{ env.OP_SUSFS == 'true' && inputs.ksu_type != 'RESUKISU' }}
       run: |
         set -euo pipefail
         echo "::group::Apply SUSFS patches"
