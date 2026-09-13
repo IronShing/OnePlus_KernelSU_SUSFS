@@ -1040,7 +1040,13 @@ runs:
         cp "$OKI/kernel_patches/fs/"* "$COMMON_KERNEL_FOLDER/fs/"
         cp "$OKI/kernel_patches/include/linux/"* "$COMMON_KERNEL_FOLDER/include/linux/"
         ( cd "$COMMON_KERNEL_FOLDER" && patch -p1 --forward --fuzz=3 < "$OKI/kernel_patches/50_add_susfs_in_gki-android16-6.12.patch" || true )
-        ( cd "$KERNEL_PLATFORM_FOLDER/$KSU_DIR" && patch -p1 --forward --fuzz=3 < "$OKI/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true )
+        # NOTE: do NOT apply susfs4oki's KernelSU/10_enable_susfs_for_ksu.patch. ReSukiSU already
+        # bundles the DRIVER side (kernel/feature/sucompat.h aliases ksu_*_unprivillege ->
+        # susfs_*_no_su, and kernel/core/init.c defines ksu_late_loaded itself). The external
+        # 10_enable was written for a different KSU layout: it partially rejects and mangles
+        # ReSukiSU's init.c -> "use of undeclared identifier ksu_late_loaded". The susfs_*_no_su /
+        # zygote_next symbols ReSukiSU aliases to come from susfs4oki's include/linux/susfs_def.h
+        # (static inlines) copied above + fs/susfs.c from 50_add.
         SUSVER=$(grep '#define SUSFS_VERSION' "$COMMON_KERNEL_FOLDER/include/linux/susfs.h" | awk -F'"' '{print $2}')
         echo "SUSVER=$SUSVER" >> $GITHUB_ENV
         echo "$SUSVER" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
