@@ -1113,8 +1113,16 @@ runs:
         # patch on top double-patches kernel/core/init.c (hunks 3 & 7 reject -> undeclared
         # ksu_lsm_hook_init / ksu_syscall_hook_manager_init). Skip the external driver patch
         # for SUKISU; the fs/ + include/linux susfs sources copied above are still in place.
-        if [ "${{ inputs.ksu_type }}" = "SUKISU" ] || [ "${{ inputs.ksu_type }}" = "RESUKISU" ]; then
-          echo "${{ inputs.ksu_type }}: bundles its own SuSFS driver support; skipping the external KernelSU 10_enable_susfs_for_ksu.patch (it breaks this fork's Kconfig). The fs/ + include/linux SuSFS sources copied above stay in place."
+        if [ "${{ inputs.ksu_type }}" = "SUKISU" ]; then
+          echo "SUKISU: SukiSU-Ultra's susfs branch integrates both the driver and kernel sides itself; skipping all external SuSFS patches."
+        elif [ "${{ inputs.ksu_type }}" = "RESUKISU" ]; then
+          # ReSukiSU bundles the DRIVER side (so the KernelSU 10_enable patch is skipped -- it also
+          # breaks ReSukiSU's Kconfig), but NOT the KERNEL side: apply 50_add_susfs_in_gki so
+          # fs/susfs.c is compiled and the core hooks are added (otherwise the driver's susfs_*
+          # symbols are undefined at link).
+          echo "RESUKISU: applying kernel-side 50_add_susfs_in_gki; driver side is bundled (skip 10_enable)."
+          ( cd "$COMMON_KERNEL_FOLDER"
+            patch -p1 --forward --fuzz=3 < "$SUSFS_FOLDER/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VER }}-${{ env.KERNEL_VER }}.patch" || true )
         else
         case "$susfs_version" in
           "v1.5.8")
