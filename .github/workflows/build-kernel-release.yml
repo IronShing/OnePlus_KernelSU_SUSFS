@@ -215,6 +215,9 @@ jobs:
           elif [ "$ksu_type" == "SUKISU" ]; then
             KSU_REPO_OWNER="SukiSU-Ultra"
             KSU_REPO_NAME="SukiSU-Ultra"
+          elif [ "$ksu_type" == "RESUKISU" ]; then
+            KSU_REPO_OWNER="ReSukiSU"
+            KSU_REPO_NAME="ReSukiSU"
           else
             KSU_REPO_OWNER="tiann"
             KSU_REPO_NAME="KernelSU"

@@ -998,6 +998,41 @@ runs:
         echo "✅ SukiSU-Ultra added ($SUKI_BRANCH, commit ${KSU_COMMIT_SHA:0:8})"
         echo "::endgroup::"
 
+    - name: Add ReSukiSU
+      shell: bash
+      if: ${{ inputs.ksu_type == 'RESUKISU' }}
+      run: |
+        set -euo pipefail
+        echo "::group::Add ReSukiSU"
+        cd "$KERNEL_PLATFORM_FOLDER"
+        RESUKI_REF="${{ inputs.ksu_branch_or_hash }}"
+        echo "Adding ReSukiSU (ref: ${RESUKI_REF:-latest})"
+        # ReSukiSU is its own KernelSU-based project; its setup.sh clones ReSukiSU into ./KernelSU
+        # (optional tag/commit arg). SuSFS is NOT bundled -- the external susfs4ksu patch is applied
+        # by the "Apply SUSFS Patches" step (which skips only for SUKISU, so ReSukiSU gets SuSFS).
+        curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$RESUKI_REF"
+        git submodule update --init --recursive || true
+        if [ -d KernelSU ]; then KSU_DIR=KernelSU; else KSU_DIR=$(find . -maxdepth 1 -type d -iname '*ksu*' -o -maxdepth 1 -type d -iname '*resukisu*' | head -1); fi
+        KSU_COMMIT_SHA=$( (cd "$KSU_DIR" 2>/dev/null && git rev-parse HEAD) 2>/dev/null || echo unknown )
+        # Same uapi include-path Kbuild fixup as the KSUN/SukiSU paths (6.12).
+        if [ -f "$KSU_DIR/kernel/Kbuild" ] && [ "${{ env.KERNEL_VER }}" = "6.12" ]; then
+          ( cd "$KSU_DIR/kernel"
+            sed -i 's|ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include|ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include -I$(KSU_KERNEL_DIR)/include/uapi|' Kbuild
+            sed -i 's|$(src)|$(abspath $(src))|' Kbuild
+            sed -i 's|$(srctree)/$(src)|$(abspath $(srctree)/$(src))|' Kbuild )
+          echo "patched $KSU_DIR/kernel/Kbuild for uapi include path"
+        fi
+        echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
+        cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
+        CONFIG_KSU=y
+        EOF
+        echo "RESUKISU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
+        echo "ReSukiSU-${RESUKI_REF:-latest}" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
+        echo "KSUVER=ReSukiSU-${RESUKI_REF:-latest}" >> $GITHUB_ENV
+        echo "NEED_HOOKS=false" >> $GITHUB_ENV
+        echo "✅ ReSukiSU added (commit ${KSU_COMMIT_SHA:0:8})"
+        echo "::endgroup::"
+
     - name: Add KernelSU
       shell: bash
       if: ${{ inputs.ksu_type == 'KSU' }}
