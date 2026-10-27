@@ -18,6 +18,7 @@ on:
         type: choice
         options:
           - A14+15+16
+          - OP15
           - A15+16
           - A14+15
           - A16
@@ -153,6 +154,9 @@ jobs:
               ;;
             A14)
               jq_filter="map(select(.os_version == \"A14\"))"
+              ;;
+            OP15)
+              jq_filter="map(select(.model == \"OP15\"))"
               ;;
             android*-*.*)
               # Extract android version and kernel version
